@@ -1,0 +1,29 @@
+# Local dev only - spins up a throwaway Postgres so you're not burning Neon
+# compute hours while iterating. Point DATABASE_URL at this instead of Neon
+# while developing, then switch back to the Neon pooled URL for deployment.
+#
+# Usage:
+#   docker compose up -d
+#   docker compose exec -T db psql -U asksql -d asksql < backend/scripts/schema.sql
+#   docker compose exec -T db psql -U asksql -d asksql < backend/scripts/seed_demo_data.sql
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: asksql
+      POSTGRES_PASSWORD: localdev
+      POSTGRES_DB: asksql
+    ports:
+      - "5432:5432"
+    volumes:
+      - asksql_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asksql"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  asksql_db_data:
