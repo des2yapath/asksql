@@ -1,0 +1,14 @@
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
+sqlalchemy==2.0.51
+asyncpg==0.31.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+sqlglot==30.12.0
+openai==2.44.0
+python-dotenv==1.2.2
+
+# --- dev/test only, not needed in the production image ---
+pytest==9.1.1
+pytest-asyncio==1.4.0
+httpx==0.28.1
