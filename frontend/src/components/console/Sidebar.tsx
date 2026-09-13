@@ -15,20 +15,66 @@ interface Props {
 }
 
 function StatusPill({ wakeState }: { wakeState: WakeState }) {
-  const config: Record<WakeState, { label: string; dot: string }> = {
-    checking: { label: "Connecting…", dot: "bg-ink/30" },
-    waking: { label: "Waking up server…", dot: "bg-amber animate-pulse" },
-    ready: { label: "Connected", dot: "bg-teal" },
-    unreachable: { label: "Can't reach backend", dot: "bg-danger" },
+  // Same four states every time, colour-coded consistently (green = good,
+  // amber = in progress, red = broken, grey = unknown) so the dot alone is
+  // readable once it's been seen. The title carries the detail for anyone
+  // who wants to know why.
+  const config: Record<WakeState, { label: string; dot: string; detail: string }> = {
+    checking: {
+      label: "Connecting…",
+      dot: "bg-ink/30",
+      detail: "Probing the backend health endpoint.",
+    },
+    waking: {
+      label: "Waking up server…",
+      dot: "bg-amber animate-pulse",
+      detail: "The free-tier backend sleeps when idle; a cold start can take up to a minute.",
+    },
+    ready: {
+      label: "Connected",
+      dot: "bg-teal",
+      detail: "Backend reachable - questions will run against the live database.",
+    },
+    unreachable: {
+      label: "Can't reach backend",
+      dot: "bg-danger",
+      detail: "No response after repeated attempts. Check the API base URL, then reload the page.",
+    },
   };
-  const { label, dot } = config[wakeState];
+  const { label, dot, detail } = config[wakeState];
   return (
     <div
       role="status"
+      title={detail}
       className="flex items-center gap-2 rounded-lg border border-ink/10 bg-white px-2.5 py-1.5 text-xs text-ink/70"
     >
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
       {label}
+    </div>
+  );
+}
+
+/** Placeholder shaped like the table list it replaces, so the panel doesn't
+ * jump when the schema lands. Beats a centred spinner for something this
+ * small - the layout is the loading indicator. */
+function SchemaSkeleton() {
+  const widths = [62, 78, 54, 70];
+  return (
+    <div className="space-y-2 px-2 py-1">
+      <span className="sr-only" role="status">
+        Loading database schema…
+      </span>
+      {widths.map((width, index) => (
+        <div
+          key={width}
+          className="flex items-center gap-2 animate-pulse"
+          style={{ animationDelay: `${index * 150}ms` }}
+          aria-hidden="true"
+        >
+          <div className="h-3 w-3 shrink-0 rounded bg-ink/10" />
+          <div className="h-3 rounded bg-ink/10" style={{ width: `${width}%` }} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -104,7 +150,7 @@ export default function Sidebar({
             <Database size={12} aria-hidden="true" /> Schema
           </div>
           {schemaError && <p className="px-2 text-xs text-danger">{schemaError}</p>}
-          {!schema && !schemaError && <p className="px-2 text-xs text-ink/60">Loading schema…</p>}
+          {!schema && !schemaError && <SchemaSkeleton />}
           {schema?.tables.map((table) => (
             <TableRow key={table.name} name={table.name} columns={table.columns} />
           ))}

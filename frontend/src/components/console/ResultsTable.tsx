@@ -1,16 +1,90 @@
 import { useMemo, useState } from "react";
-import { BarChart3, ChevronLeft, ChevronRight, Table2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsUpDown,
+  Download,
+  Inbox,
+  Table2,
+} from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { QueryResultData } from "../../types";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZES = [10, 25, 50, 100];
+
+type SortDirection = "asc" | "desc";
+interface SortState {
+  column: string;
+  direction: SortDirection;
+}
+
+function isMissing(value: unknown): boolean {
+  return value === null || value === undefined;
+}
 
 function formatCell(value: unknown): string {
-  if (value === null || value === undefined) return "—";
+  if (isMissing(value)) return "—";
   if (typeof value === "number") {
     return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
   }
   return String(value);
+}
+
+/** Numbers in the results are almost always money or counts, and scanning a
+ * column of them is much easier right-aligned with tabular figures - but a
+ * run of text values reads better left-aligned, so this is decided per
+ * column from the data actually returned rather than up front. */
+function numericColumns(columns: string[], rows: Record<string, unknown>[]): Set<string> {
+  const numeric = new Set<string>();
+  for (const column of columns) {
+    const values = rows.map((row) => row[column]).filter((value) => !isMissing(value));
+    if (values.length > 0 && values.every((value) => typeof value === "number")) {
+      numeric.add(column);
+    }
+  }
+  return numeric;
+}
+
+function sortRows(
+  rows: Record<string, unknown>[],
+  column: string,
+  direction: SortDirection
+): Record<string, unknown>[] {
+  const present = rows.filter((row) => !isMissing(row[column]));
+  const missing = rows.filter((row) => isMissing(row[column]));
+
+  const sorted = [...present].sort((a, b) => {
+    const left = a[column];
+    const right = b[column];
+    const comparison =
+      typeof left === "number" && typeof right === "number"
+        ? left - right
+        : // numeric:true so "Row 2" sorts before "Row 10" instead of after it.
+          String(left).localeCompare(String(right), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+    return direction === "asc" ? comparison : -comparison;
+  });
+
+  // Nulls sink to the bottom in both directions - flipping them to the top on
+  // a descending sort just buries the rows the user asked to see.
+  return [...sorted, ...missing];
+}
+
+function csvCell(value: unknown): string {
+  if (isMissing(value)) return "";
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function buildCsv(columns: string[], rows: Record<string, unknown>[]): string {
+  const header = columns.map(csvCell).join(",");
+  const body = rows.map((row) => columns.map((column) => csvCell(row[column])).join(","));
+  return [header, ...body].join("\r\n");
 }
 
 /** Two columns, second one numeric across every row - simple enough to be
@@ -26,87 +100,197 @@ function isChartable(result: QueryResultData): boolean {
 
 export default function ResultsTable({ result }: { result: QueryResultData }) {
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0]);
   const [view, setView] = useState<"table" | "chart">("table");
+  const [sort, setSort] = useState<SortState | null>(null);
 
   const chartable = useMemo(() => isChartable(result), [result]);
-  const totalPages = Math.max(1, Math.ceil(result.rows.length / PAGE_SIZE));
-  const pageRows = result.rows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const numeric = useMemo(
+    () => numericColumns(result.columns, result.rows),
+    [result.columns, result.rows]
+  );
 
+  const sortedRows = useMemo(
+    () => (sort ? sortRows(result.rows, sort.column, sort.direction) : result.rows),
+    [result.rows, sort]
+  );
+
+  // Clamp rather than trust `page`: changing page size can leave it past the
+  // end, and rendering an empty page would look like a bug.
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
+  const currentPage = Math.min(page, totalPages - 1);
+  const pageRows = sortedRows.slice(currentPage * pageSize, currentPage * pageSize + pageSize);
+
+  const isEmpty = result.rows.length === 0;
   const [labelKey, valueKey] = result.columns;
+
+  function toggleSort(column: string) {
+    setPage(0);
+    setSort((previous) =>
+      previous?.column === column
+        ? { column, direction: previous.direction === "asc" ? "desc" : "asc" }
+        : { column, direction: "asc" }
+    );
+  }
+
+  function handleExport() {
+    const blob = new Blob([buildCsv(result.columns, sortedRows)], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `asksql-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    // Revoking synchronously can cancel the download before the browser has
+    // read the blob, so let the click settle first.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   return (
     <div className="overflow-hidden rounded-lg border border-ink/10">
-      <div className="flex items-center justify-between border-b border-ink/10 bg-ink/[0.03] px-3 py-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/10 bg-ink/[0.03] px-3 py-1.5">
         <span className="font-mono text-[11px] text-ink/50">
           {result.row_count} row{result.row_count === 1 ? "" : "s"}
           {result.truncated ? " (showing max)" : ""}
         </span>
-        {chartable && (
-          <div className="flex overflow-hidden rounded-md border border-ink/10">
+        <div className="flex items-center gap-2">
+          {!isEmpty && (
             <button
-              onClick={() => setView("table")}
-              className={`flex items-center gap-1 px-2 py-1 text-xs ${
-                view === "table" ? "bg-ink text-canvas" : "text-ink/50 hover:text-ink"
-              }`}
+              onClick={handleExport}
+              className="flex items-center gap-1 rounded-md border border-ink/10 px-2 py-1 text-xs text-ink/60 transition-colors hover:border-ink/20 hover:text-ink"
+              aria-label="Download these results as CSV"
             >
-              <Table2 size={12} /> Table
+              <Download size={12} aria-hidden="true" /> CSV
             </button>
-            <button
-              onClick={() => setView("chart")}
-              className={`flex items-center gap-1 px-2 py-1 text-xs ${
-                view === "chart" ? "bg-ink text-canvas" : "text-ink/50 hover:text-ink"
-              }`}
-            >
-              <BarChart3 size={12} /> Chart
-            </button>
-          </div>
-        )}
+          )}
+          {chartable && (
+            <div className="flex overflow-hidden rounded-md border border-ink/10">
+              <button
+                onClick={() => setView("table")}
+                className={`flex items-center gap-1 px-2 py-1 text-xs ${
+                  view === "table" ? "bg-ink text-canvas" : "text-ink/50 hover:text-ink"
+                }`}
+                aria-pressed={view === "table"}
+              >
+                <Table2 size={12} aria-hidden="true" /> Table
+              </button>
+              <button
+                onClick={() => setView("chart")}
+                className={`flex items-center gap-1 px-2 py-1 text-xs ${
+                  view === "chart" ? "bg-ink text-canvas" : "text-ink/50 hover:text-ink"
+                }`}
+                aria-pressed={view === "chart"}
+              >
+                <BarChart3 size={12} aria-hidden="true" /> Chart
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {view === "chart" && chartable ? (
-        <div className="h-64 p-3">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={result.rows} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#12172A0f" vertical={false} />
-              <XAxis
-                dataKey={labelKey}
-                tick={{ fontSize: 11, fill: "#12172A99" }}
-                axisLine={{ stroke: "#12172A1a" }}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: "#12172A99" }}
-                axisLine={false}
-                tickLine={false}
-                width={40}
-              />
-              <Tooltip
-                cursor={{ fill: "#12172A08" }}
-                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #12172A1a" }}
-              />
-              <Bar dataKey={valueKey} fill="#E8A33D" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      {isEmpty ? (
+        // A query that legitimately matches nothing is a normal outcome, not a
+        // failure - so it gets an explanation and a next step rather than an
+        // empty grid of column headers.
+        <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+          <Inbox size={20} className="text-ink/25" aria-hidden="true" />
+          <p className="mt-2 text-sm text-ink/60">No rows returned</p>
+          <p className="mt-1 max-w-xs text-xs text-ink/40">
+            The query ran successfully but nothing matched. Try widening the date range or removing a
+            filter from the question.
+          </p>
+        </div>
+      ) : view === "chart" && chartable ? (
+        <div className="space-y-2 p-3">
+          <p className="font-mono text-[11px] uppercase tracking-wide text-ink/40">
+            {valueKey} by {labelKey}
+          </p>
+          <div className="h-60">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sortedRows} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#12172A0f" vertical={false} />
+                <XAxis
+                  dataKey={labelKey}
+                  tick={{ fontSize: 11, fill: "#12172A99" }}
+                  axisLine={{ stroke: "#12172A1a" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "#12172A99" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={40}
+                />
+                <Tooltip
+                  cursor={{ fill: "#12172A08" }}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #12172A1a" }}
+                  formatter={(value) => formatCell(value)}
+                />
+                <Bar dataKey={valueKey} fill="#E8A33D" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       ) : (
         <>
           <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-left text-sm">
+            <table className="w-full border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-ink/10 bg-ink/[0.02]">
-                  {result.columns.map((col) => (
-                    <th key={col} className="whitespace-nowrap px-3 py-2 font-medium text-ink/60">
-                      {col}
-                    </th>
-                  ))}
+                  {result.columns.map((column) => {
+                    const active = sort?.column === column;
+                    const isNumeric = numeric.has(column);
+                    return (
+                      <th
+                        key={column}
+                        scope="col"
+                        aria-sort={
+                          active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"
+                        }
+                        className={`whitespace-nowrap px-3 py-2 font-medium text-ink/60 ${
+                          isNumeric ? "text-right" : ""
+                        }`}
+                      >
+                        <button
+                          onClick={() => toggleSort(column)}
+                          className="group inline-flex items-center gap-1 transition-colors hover:text-ink"
+                          title={`Sort by ${column}`}
+                        >
+                          <span>{column}</span>
+                          {active ? (
+                            sort.direction === "asc" ? (
+                              <ArrowUp size={11} className="text-amber-dark" aria-hidden="true" />
+                            ) : (
+                              <ArrowDown size={11} className="text-amber-dark" aria-hidden="true" />
+                            )
+                          ) : (
+                            <ChevronsUpDown
+                              size={11}
+                              className="text-ink/20 transition-colors group-hover:text-ink/40"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </button>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((row, i) => (
-                  <tr key={i} className="border-b border-ink/5 last:border-0 hover:bg-ink/[0.02]">
-                    {result.columns.map((col) => (
-                      <td key={col} className="whitespace-nowrap px-3 py-2 text-ink/80">
-                        {formatCell(row[col])}
+                {pageRows.map((row, index) => (
+                  <tr
+                    key={index}
+                    className="border-b border-ink/5 last:border-0 hover:bg-ink/[0.02]"
+                  >
+                    {result.columns.map((column) => (
+                      <td
+                        key={column}
+                        className={`whitespace-nowrap px-3 py-2 text-ink/80 ${
+                          numeric.has(column) ? "text-right tabular-nums" : ""
+                        }`}
+                      >
+                        {formatCell(row[column])}
                       </td>
                     ))}
                   </tr>
@@ -115,26 +299,48 @@ export default function ResultsTable({ result }: { result: QueryResultData }) {
             </table>
           </div>
 
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-ink/10 px-3 py-1.5">
-              <span className="font-mono text-[11px] text-ink/40">
-                Page {page + 1} of {totalPages}
-              </span>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  disabled={page === 0}
-                  className="rounded p-1 text-ink/50 hover:bg-ink/5 disabled:opacity-30"
+          {sortedRows.length > PAGE_SIZES[0] && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink/10 px-3 py-1.5">
+              <label className="flex items-center gap-1.5 font-mono text-[11px] text-ink/40">
+                Rows
+                <select
+                  value={pageSize}
+                  onChange={(event) => {
+                    setPageSize(Number(event.target.value));
+                    setPage(0);
+                  }}
+                  aria-label="Rows per page"
+                  className="rounded border border-ink/10 bg-white px-1 py-0.5 font-mono text-[11px] text-ink/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-ink/30"
                 >
-                  <ChevronLeft size={14} />
-                </button>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                  disabled={page >= totalPages - 1}
-                  className="rounded p-1 text-ink/50 hover:bg-ink/5 disabled:opacity-30"
-                >
-                  <ChevronRight size={14} />
-                </button>
+                  {PAGE_SIZES.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[11px] text-ink/40">
+                  Page {currentPage + 1} of {totalPages}
+                </span>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setPage(Math.max(0, currentPage - 1))}
+                    disabled={currentPage === 0}
+                    className="rounded p-1 text-ink/50 hover:bg-ink/5 disabled:opacity-30"
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft size={14} aria-hidden="true" />
+                  </button>
+                  <button
+                    onClick={() => setPage(Math.min(totalPages - 1, currentPage + 1))}
+                    disabled={currentPage >= totalPages - 1}
+                    className="rounded p-1 text-ink/50 hover:bg-ink/5 disabled:opacity-30"
+                    aria-label="Next page"
+                  >
+                    <ChevronRight size={14} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             </div>
           )}

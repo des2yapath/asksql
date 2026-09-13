@@ -31,6 +31,18 @@ export default function Console() {
       .catch((err) => setSchemaError(err instanceof ApiError ? err.message : "Couldn't load schema."));
   }, [wakeState]);
 
+  // Escape closes the mobile schema drawer - the backdrop click is a mouse
+  // affordance, and a slide-in panel that traps keyboard users is worse than
+  // no panel at all.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setSidebarOpen(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sidebarOpen]);
+
   async function handleSubmit(question: string) {
     const trimmed = question.trim();
     if (!trimmed || isThinking) return;
@@ -121,6 +133,7 @@ export default function Console() {
                 onSubmit={() => handleSubmit(input)}
                 disabled={inputDisabled}
                 placeholder={placeholder}
+                autoFocus={isDesktop}
               />
             </div>
           </div>

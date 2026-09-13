@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { ArrowUp } from "lucide-react";
 
 interface Props {
@@ -7,10 +7,25 @@ interface Props {
   onSubmit: () => void;
   disabled: boolean;
   placeholder: string;
+  /** Desktop only: focusing the box on load puts the cursor where the user
+   * already intends to go. Skipped on mobile, where it would force the
+   * on-screen keyboard open over the whole page. */
+  autoFocus?: boolean;
 }
 
-export default function QueryInput({ value, onChange, onSubmit, disabled, placeholder }: Props) {
+export default function QueryInput({
+  value,
+  onChange,
+  onSubmit,
+  disabled,
+  placeholder,
+  autoFocus = false,
+}: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) textareaRef.current?.focus();
+  }, [autoFocus]);
 
   function handleInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
     onChange(e.target.value);
