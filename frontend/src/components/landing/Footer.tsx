@@ -6,7 +6,7 @@ export default function Footer() {
           <span className="font-mono text-amber-dark">&rsaquo;_</span>
           <span className="font-display font-semibold text-ink/70">AskSQL</span>
         </div>
-        <p>Built with FastAPI, React, PostgreSQL, and Groq.</p>
+        <p>Built with FastAPI, React, PostgreSQL, and Gemini.</p>
         <p>A portfolio project - not affiliated with any similarly named product.</p>
       </div>
     </footer>

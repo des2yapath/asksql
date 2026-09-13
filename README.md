@@ -15,7 +15,7 @@ frontend that looks like a real product rather than a demo.
 | Frontend  | React 19 + Vite + TypeScript + Tailwind             | Fast dev loop, no server needed, ships as static files              |
 | Backend   | FastAPI + SQLAlchemy (async) + asyncpg              | Async all the way down; good fit for I/O-bound LLM + DB calls        |
 | Database  | PostgreSQL (Neon, free tier)                        | Real Postgres, serverless, scales to zero, no card required          |
-| GenAI     | Groq (Llama 3.3 70B), OpenAI-compatible endpoint    | Free tier, and fast enough that query generation doesn't feel laggy  |
+| GenAI     | Google Gemini Flash, OpenAI-compatible endpoint     | Free tier, and fast enough that query generation doesn't feel laggy  |
 | Guardrail | sqlglot (SQL -> AST)                                | Structural validation beats regex/keyword blocklisting               |
 | Hosting   | Vercel (frontend) + Render (backend) + Neon (DB)    | All have real, persistent free tiers as of mid-2026                  |
 
@@ -23,7 +23,7 @@ frontend that looks like a real product rather than a demo.
 
 ```
  ┌──────────┐     question      ┌─────────────┐     schema-aware prompt     ┌────────┐
- │  React   │ ───────────────►  │   FastAPI   │ ──────────────────────────► │  Groq  │
+ │  React   │ ───────────────►  │   FastAPI   │ ──────────────────────────► │ Gemini │
  │ (Vercel) │                   │  (Render)   │ ◄────────────────────────── │ (LLM)  │
  └──────────┘ ◄─────────────── └──────┬──────┘        JSON: {sql, ...}      └────────┘
       JSON: rows + SQL + timing        │
@@ -56,7 +56,7 @@ backend/
       session.py           Async engine/session (PgBouncer-safe config)
       schema_introspection.py   Live schema -> LLM prompt context + sidebar API
     llm/
-      client.py             Groq (OpenAI-compatible) wrapper
+      client.py             Gemini (OpenAI-compatible) wrapper
       prompts.py             System prompt + few-shot examples
       nl_to_sql.py            Orchestration: question -> validated LlmSqlResult
     sql_guard/
@@ -100,11 +100,11 @@ it with `psql "$DATABASE_URL" -f backend/scripts/schema.sql`, etc.
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in DATABASE_URL and GROQ_API_KEY
+cp .env.example .env   # fill in DATABASE_URL and GEMINI_API_KEY
 uvicorn app.main:app --reload
 ```
 
-Get a free Groq API key (no card required) at https://console.groq.com/keys.
+Get a free Gemini API key (no card required) at https://aistudio.google.com/apikey.
 
 Run the tests (the guardrail tests especially - see `backend/tests/test_sql_guard.py`):
 
@@ -133,8 +133,11 @@ Visit `http://localhost:5173`. The marketing page is at `/`, the actual chat con
 4. Run `backend/scripts/setup_readonly_role.sql` (edit the password first) and use *that* role's
    connection string as `DATABASE_URL` for the deployed backend - never the owner role.
 
-**GenAI - Groq**
-1. Create a free key at https://console.groq.com/keys. No card required.
+**GenAI - Google Gemini**
+1. Create a free key at https://aistudio.google.com/apikey. No card required.
+2. `GEMINI_MODEL` defaults to `gemini-2.5-flash`, which is free-tier eligible. Newer Flash models
+   (e.g. `gemini-3.8-flash`) also work; if you switch, expect higher latency, because Gemini 3
+   models always reason before answering and can't have that disabled.
 
 **Backend - Render**
 1. New Web Service -> connect this repo -> root directory `backend`.
@@ -158,7 +161,7 @@ These are called out inline in the code too, not just here:
 
 - **No auth.** Fine for a demo pointed at a seeded, read-only-role database. Not fine the moment this
   touches real user data - add an API key or JWT check in `backend/app/api/deps.py` first.
-- **No rate limiting.** A single user could hammer `/api/query` in a loop; each call costs a Groq
+- **No rate limiting.** A single user could hammer `/api/query` in a loop; each call costs a Gemini
   request plus a DB round trip. `slowapi` is the natural fit, deliberately left out to avoid needing
   Redis for a single-instance portfolio deployment.
 - **No multi-turn context.** Each question is answered from scratch - "now filter that to just

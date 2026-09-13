@@ -2,7 +2,7 @@
 
 TODO: this is where a real rate limiter belongs before this ever takes
 public traffic - right now a single user could fire questions in a tight
-loop and each one costs a Groq call plus a DB round trip. slowapi (Redis or
+loop and each one costs an LLM call plus a DB round trip. slowapi (Redis or
 in-memory backed) is the natural fit; punted on it for now because the free
 Render instance is single-process anyway and adding Redis is another free
 tier to provision and another thing that can fall over during a demo.

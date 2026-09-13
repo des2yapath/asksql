@@ -28,9 +28,12 @@ class Settings(BaseSettings):
     db_pool_max_overflow: int = Field(default=5, alias="DB_MAX_OVERFLOW")
     query_timeout_ms: int = Field(default=8000, alias="QUERY_TIMEOUT_MS")
 
-    # --- GenAI (Groq, OpenAI-compatible endpoint) ----------------------
-    groq_api_key: str = Field(..., alias="GROQ_API_KEY")
-    groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
+    # --- GenAI (Google Gemini, OpenAI-compatible endpoint) -------------
+    # Default is the free-tier Flash model; any Gemini Flash variant works
+    # (see backend/app/llm/client.py for the reasoning_effort caveat if you
+    # point this at a Gemini 3.x model).
+    gemini_api_key: str = Field(..., alias="GEMINI_API_KEY")
+    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
     llm_timeout_seconds: float = Field(default=20.0, alias="LLM_TIMEOUT_SECONDS")
 
     # --- Guardrails -----------------------------------------------------
