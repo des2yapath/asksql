@@ -1,0 +1,15 @@
+# Normalize line endings: LF in the repository and in every checkout,
+# regardless of platform or a contributor's core.autocrlf setting. Without
+# this, a Windows contributor with autocrlf=false can commit CRLF into the
+# repo and make every later diff noisy.
+* text=auto eol=lf
+
+# Binary files - never convert.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
