@@ -45,25 +45,32 @@ export default function QueryInput({
   }
 
   return (
-    <div className="flex items-end gap-2 rounded-xl border border-ink/10 bg-white px-3 py-2 shadow-panel">
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={handleInput}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        rows={1}
-        disabled={disabled}
-        className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-[15px] text-ink placeholder:text-ink/35 focus:outline-none disabled:opacity-50"
-      />
-      <button
-        onClick={onSubmit}
-        disabled={disabled || !value.trim()}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ink text-canvas transition-colors hover:bg-ink/85 disabled:opacity-25"
-        aria-label="Send question"
-      >
-        <ArrowUp size={16} strokeWidth={2.25} />
-      </button>
+    <div className="space-y-1.5">
+      <div className="flex items-end gap-2 rounded-xl border border-ink/10 bg-surface px-3 py-2 shadow-panel transition-colors focus-within:border-violet/40">
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={handleInput}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          rows={1}
+          disabled={disabled}
+          className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-[15px] text-ink placeholder:text-ink/35 focus:outline-none disabled:opacity-50"
+        />
+        <button
+          onClick={onSubmit}
+          disabled={disabled || !value.trim()}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ink text-canvas transition-colors hover:bg-ink/85 disabled:opacity-25"
+          aria-label="Send question"
+        >
+          <ArrowUp size={16} strokeWidth={2.25} aria-hidden="true" />
+        </button>
+      </div>
+      {/* Progressive disclosure of the keyboard model - discoverable exactly
+          where it's relevant, and quiet enough to ignore once learned. */}
+      <p className="hidden px-1 font-mono text-[10.5px] text-ink/35 sm:block">
+        Enter to run · Shift + Enter for a new line
+      </p>
     </div>
   );
 }

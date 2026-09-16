@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ChatMessage } from "../../types";
 import MessageBubble from "./MessageBubble";
+import QuerySkeleton from "./QuerySkeleton";
 
 const EXAMPLE_PROMPTS = [
   "Show me the 5 most recent orders",
@@ -24,8 +25,11 @@ export default function ChatPanel({ messages, isThinking, onExampleClick }: Prop
 
   if (messages.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center px-6">
-        <h2 className="font-display text-2xl font-semibold text-ink/80">
+      <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-10 scrollbar-thin">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-light text-teal">
+          <span className="font-mono text-lg">&rsaquo;_</span>
+        </div>
+        <h2 className="mt-4 font-display text-2xl font-semibold text-ink/85">
           Ask something about your data
         </h2>
         <p className="mt-2 max-w-sm text-center text-sm text-ink/50">
@@ -37,7 +41,7 @@ export default function ChatPanel({ messages, isThinking, onExampleClick }: Prop
             <button
               key={prompt}
               onClick={() => onExampleClick(prompt)}
-              className="rounded-lg border border-ink/10 bg-white px-3.5 py-2.5 text-left text-[13px] text-ink/70 shadow-panel transition-colors hover:border-ink/20 hover:text-ink"
+              className="rounded-lg border border-ink/10 bg-surface px-3.5 py-2.5 text-left text-[13px] text-ink/70 shadow-panel transition-colors hover:border-ink/20 hover:text-ink"
             >
               {prompt}
             </button>
@@ -48,20 +52,17 @@ export default function ChatPanel({ messages, isThinking, onExampleClick }: Prop
   }
 
   return (
-    <div className="flex-1 space-y-5 overflow-y-auto px-6 py-6 scrollbar-thin">
+    // aria-live on the transcript so a screen reader announces the answer as
+    // it lands, without stealing focus from the input the user is still in.
+    <div
+      className="flex-1 space-y-5 overflow-y-auto px-4 py-6 scrollbar-thin md:px-6"
+      aria-live="polite"
+      aria-busy={isThinking}
+    >
       {messages.map((message) => (
         <MessageBubble key={message.id} message={message} />
       ))}
-      {isThinking && (
-        <div className="flex items-center gap-1.5 pl-1 font-mono text-xs text-ink/40">
-          <span>Thinking</span>
-          <span className="flex gap-0.5">
-            <span className="h-1 w-1 animate-bounce rounded-full bg-ink/30 [animation-delay:-0.3s]" />
-            <span className="h-1 w-1 animate-bounce rounded-full bg-ink/30 [animation-delay:-0.15s]" />
-            <span className="h-1 w-1 animate-bounce rounded-full bg-ink/30" />
-          </span>
-        </div>
-      )}
+      {isThinking && <QuerySkeleton />}
       <div ref={bottomRef} />
     </div>
   );
