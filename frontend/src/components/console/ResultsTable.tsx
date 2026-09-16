@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -8,12 +8,42 @@ import {
   ChevronsUpDown,
   Download,
   Inbox,
+  Search,
   Table2,
+  X,
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { QueryResultData } from "../../types";
+import { useTheme } from "../../lib/theme";
+import { useToast } from "../../lib/toast";
 
 const PAGE_SIZES = [10, 25, 50, 100];
+
+/**
+ * Recharts renders to SVG attributes, and CSS custom properties don't resolve
+ * inside presentation attributes - so the chart gets a concrete palette per
+ * theme instead of reading the tokens the rest of the UI uses.
+ */
+const CHART_PALETTE = {
+  light: {
+    grid: "rgba(18,23,42,0.06)",
+    axis: "rgba(18,23,42,0.6)",
+    bar: "#E8A33D",
+    cursor: "rgba(18,23,42,0.04)",
+    tooltipBg: "#FFFFFF",
+    tooltipBorder: "rgba(18,23,42,0.12)",
+    tooltipText: "#12172A",
+  },
+  dark: {
+    grid: "rgba(255,255,255,0.08)",
+    axis: "rgba(232,234,237,0.65)",
+    bar: "#F0B25A",
+    cursor: "rgba(255,255,255,0.05)",
+    tooltipBg: "#1A1D27",
+    tooltipBorder: "rgba(255,255,255,0.14)",
+    tooltipText: "#E8EAED",
+  },
+} as const;
 
 type SortDirection = "asc" | "desc";
 interface SortState {
@@ -103,16 +133,43 @@ export default function ResultsTable({ result }: { result: QueryResultData }) {
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0]);
   const [view, setView] = useState<"table" | "chart">("table");
   const [sort, setSort] = useState<SortState | null>(null);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const { theme } = useTheme();
+  const { pushToast } = useToast();
+  const palette = CHART_PALETTE[theme];
+
+  // Debounced so typing in the filter doesn't re-sort and re-render the whole
+  // result set on every keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // A narrower result set makes page N meaningless, so jump back to the top
+  // whenever the filter changes rather than showing a possible empty page.
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch]);
 
   const chartable = useMemo(() => isChartable(result), [result]);
+
+  const filteredRows = useMemo(() => {
+    const query = debouncedSearch.trim().toLowerCase();
+    if (!query) return result.rows;
+    return result.rows.filter((row) =>
+      result.columns.some((column) => formatCell(row[column]).toLowerCase().includes(query))
+    );
+  }, [result.rows, result.columns, debouncedSearch]);
+
   const numeric = useMemo(
-    () => numericColumns(result.columns, result.rows),
-    [result.columns, result.rows]
+    () => numericColumns(result.columns, filteredRows),
+    [result.columns, filteredRows]
   );
 
   const sortedRows = useMemo(
-    () => (sort ? sortRows(result.rows, sort.column, sort.direction) : result.rows),
-    [result.rows, sort]
+    () => (sort ? sortRows(filteredRows, sort.column, sort.direction) : filteredRows),
+    [filteredRows, sort]
   );
 
   // Clamp rather than trust `page`: changing page size can leave it past the
@@ -122,6 +179,8 @@ export default function ResultsTable({ result }: { result: QueryResultData }) {
   const pageRows = sortedRows.slice(currentPage * pageSize, currentPage * pageSize + pageSize);
 
   const isEmpty = result.rows.length === 0;
+  const noMatches = !isEmpty && sortedRows.length === 0;
+  const isFiltered = debouncedSearch.trim().length > 0;
   const [labelKey, valueKey] = result.columns;
 
   function toggleSort(column: string) {
@@ -145,15 +204,44 @@ export default function ResultsTable({ result }: { result: QueryResultData }) {
     // Revoking synchronously can cancel the download before the browser has
     // read the blob, so let the click settle first.
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    pushToast(`Exported ${sortedRows.length} row${sortedRows.length === 1 ? "" : "s"} to CSV`, "success");
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-ink/10">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/10 bg-ink/[0.03] px-3 py-1.5">
-        <span className="font-mono text-[11px] text-ink/50">
-          {result.row_count} row{result.row_count === 1 ? "" : "s"}
-          {result.truncated ? " (showing max)" : ""}
-        </span>
+    <div className="overflow-hidden rounded-lg border border-ink/10 bg-surface">
+      {/* Toolbar: filter on the left, output controls on the right. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/10 bg-ink/[0.03] px-3 py-2">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search
+              size={12}
+              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-ink/35"
+              aria-hidden="true"
+            />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Filter rows…"
+              aria-label="Filter result rows"
+              className="w-40 rounded-md border border-ink/10 bg-surface py-1 pl-6 pr-6 text-xs text-ink placeholder:text-ink/35 focus:border-violet/40 focus:outline-none sm:w-52"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink/40 hover:text-ink"
+                aria-label="Clear filter"
+              >
+                <X size={11} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+          <span className="font-mono text-[11px] text-ink/50">
+            {isFiltered ? `${sortedRows.length} of ${result.row_count}` : result.row_count} row
+            {result.row_count === 1 ? "" : "s"}
+            {result.truncated ? " (capped)" : ""}
+          </span>
+        </div>
+
         <div className="flex items-center gap-2">
           {!isEmpty && (
             <button
@@ -201,6 +289,17 @@ export default function ResultsTable({ result }: { result: QueryResultData }) {
             filter from the question.
           </p>
         </div>
+      ) : noMatches ? (
+        <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+          <Search size={20} className="text-ink/25" aria-hidden="true" />
+          <p className="mt-2 text-sm text-ink/60">No rows match “{debouncedSearch.trim()}”</p>
+          <button
+            onClick={() => setSearch("")}
+            className="mt-2 rounded-md border border-ink/10 px-2.5 py-1 text-xs text-ink/60 transition-colors hover:border-ink/20 hover:text-ink"
+          >
+            Clear filter
+          </button>
+        </div>
       ) : view === "chart" && chartable ? (
         <div className="space-y-2 p-3">
           <p className="font-mono text-[11px] uppercase tracking-wide text-ink/40">
@@ -209,35 +308,44 @@ export default function ResultsTable({ result }: { result: QueryResultData }) {
           <div className="h-60">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={sortedRows} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#12172A0f" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} vertical={false} />
                 <XAxis
                   dataKey={labelKey}
-                  tick={{ fontSize: 11, fill: "#12172A99" }}
-                  axisLine={{ stroke: "#12172A1a" }}
+                  tick={{ fontSize: 11, fill: palette.axis }}
+                  axisLine={{ stroke: palette.grid }}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fontSize: 11, fill: "#12172A99" }}
+                  tick={{ fontSize: 11, fill: palette.axis }}
                   axisLine={false}
                   tickLine={false}
                   width={40}
                 />
                 <Tooltip
-                  cursor={{ fill: "#12172A08" }}
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #12172A1a" }}
+                  cursor={{ fill: palette.cursor }}
+                  contentStyle={{
+                    fontSize: 12,
+                    borderRadius: 8,
+                    border: `1px solid ${palette.tooltipBorder}`,
+                    background: palette.tooltipBg,
+                    color: palette.tooltipText,
+                  }}
                   formatter={(value) => formatCell(value)}
                 />
-                <Bar dataKey={valueKey} fill="#E8A33D" radius={[4, 4, 0, 0]} />
+                <Bar dataKey={valueKey} fill={palette.bar} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full border-collapse text-left text-sm">
+          {/* Bounded height so the header can stick while rows scroll under it -
+              with the row cap at 200 this replaces virtual scrolling, which
+              would be over-engineering for a dataset this size. */}
+          <div className="max-h-[26rem] overflow-auto scrollbar-thin">
+            <table className="w-full border-separate border-spacing-0 text-left text-sm">
               <thead>
-                <tr className="border-b border-ink/10 bg-ink/[0.02]">
+                <tr>
                   {result.columns.map((column) => {
                     const active = sort?.column === column;
                     const isNumeric = numeric.has(column);
@@ -248,13 +356,15 @@ export default function ResultsTable({ result }: { result: QueryResultData }) {
                         aria-sort={
                           active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"
                         }
-                        className={`whitespace-nowrap px-3 py-2 font-medium text-ink/60 ${
+                        className={`sticky top-0 z-10 whitespace-nowrap border-b border-ink/10 bg-surface-muted px-3 py-2 font-medium text-ink/60 ${
                           isNumeric ? "text-right" : ""
                         }`}
                       >
                         <button
                           onClick={() => toggleSort(column)}
-                          className="group inline-flex items-center gap-1 transition-colors hover:text-ink"
+                          className={`group inline-flex items-center gap-1 transition-colors hover:text-ink ${
+                            isNumeric ? "flex-row-reverse" : ""
+                          }`}
                           title={`Sort by ${column}`}
                         >
                           <span>{column}</span>
@@ -279,14 +389,11 @@ export default function ResultsTable({ result }: { result: QueryResultData }) {
               </thead>
               <tbody>
                 {pageRows.map((row, index) => (
-                  <tr
-                    key={index}
-                    className="border-b border-ink/5 last:border-0 hover:bg-ink/[0.02]"
-                  >
+                  <tr key={index} className="group">
                     {result.columns.map((column) => (
                       <td
                         key={column}
-                        className={`whitespace-nowrap px-3 py-2 text-ink/80 ${
+                        className={`whitespace-nowrap border-b border-ink/5 px-3 py-2 text-ink/80 transition-colors group-hover:bg-ink/[0.03] ${
                           numeric.has(column) ? "text-right tabular-nums" : ""
                         }`}
                       >
@@ -300,7 +407,7 @@ export default function ResultsTable({ result }: { result: QueryResultData }) {
           </div>
 
           {sortedRows.length > PAGE_SIZES[0] && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink/10 px-3 py-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink/10 px-3 py-2">
               <label className="flex items-center gap-1.5 font-mono text-[11px] text-ink/40">
                 Rows
                 <select
@@ -310,7 +417,7 @@ export default function ResultsTable({ result }: { result: QueryResultData }) {
                     setPage(0);
                   }}
                   aria-label="Rows per page"
-                  className="rounded border border-ink/10 bg-white px-1 py-0.5 font-mono text-[11px] text-ink/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-ink/30"
+                  className="rounded border border-ink/10 bg-surface px-1 py-0.5 font-mono text-[11px] text-ink/60 focus:outline-none"
                 >
                   {PAGE_SIZES.map((size) => (
                     <option key={size} value={size}>
