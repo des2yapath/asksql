@@ -34,7 +34,11 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
     return (
       <div className="flex items-start gap-2.5 rounded-xl border border-amber/25 bg-amber/[0.06] px-4 py-3 text-sm text-ink/80 animate-fade-in">
         <HelpCircle size={16} className="mt-0.5 shrink-0 text-amber-dark" strokeWidth={1.75} aria-hidden="true" />
-        <span>{response.clarification_question}</span>
+        {/* The backend also sets needs_clarification for the read-only refusal
+            (query.py treats a null sql as "nothing to run"), but a refusal
+            carries its text in `explanation`, not `clarification_question` -
+            without the fallback the bubble renders completely empty. */}
+        <span>{response.clarification_question ?? response.explanation}</span>
       </div>
     );
   }
