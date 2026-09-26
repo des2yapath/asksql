@@ -123,6 +123,25 @@ npm run dev
 
 Visit `http://localhost:5173`. The marketing page is at `/`, the actual chat console is at `/console`.
 
+### 4. Browser tests
+
+```bash
+npx playwright install chromium   # one-time browser download
+npm run test:e2e                  # stubbed API: no backend, database or key needed
+npm run test:e2e:live             # real stack: needs steps 1-2 running on :8000
+```
+
+`npm run test:e2e` answers every `/api` call in the browser, so it runs anywhere with no
+database, no Gemini key and no running backend. It covers the console's happy paths (SQL
+block, results table, chart), the empty and clarification states, and both ways a
+destructive question gets stopped: the guard's 422 message, and the model's read-only
+refusal.
+
+`npm run test:e2e:live` runs a single test against the real stack. It fires a
+prompt-injection-style `DROP TABLE orders` question at the backend, asserts nothing was
+executed, then proves it by querying the table again. It skips itself when the backend
+isn't reachable on `:8000`, so it's safe to leave in your routine.
+
 ## Deployment (all free tier, no credit card)
 
 **Database - Neon**
